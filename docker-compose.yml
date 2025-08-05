@@ -1,0 +1,108 @@
+services:
+  db:
+    platform: linux/amd64
+    image: postgis/postgis:15-3.4
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    shm_size: 2g
+
+  nominatim-import:
+    platform: linux/amd64
+    image: mediagis/nominatim:4.4
+    depends_on:
+      - db
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: postgres
+      NOMINATIM_IMPORT_WIKIPEDIA: false
+    volumes:
+      - ./sweden-latest.osm.pbf:/nominatim/data/sweden-latest.osm.pbf:ro
+      - nominatim-data:/var/lib/nominatim
+    command: >
+      sh -c "psql -h db -U ${POSTGRES_USER} -tAc \"SELECT 1 FROM pg_roles WHERE rolname='www-data'\" | grep -q 1 || createuser -h db -U ${POSTGRES_USER} www-data &&
+             nominatim import --osm-file /nominatim/data/sweden-latest.osm.pbf"
+    shm_size: 2g
+
+  opensearch:
+    platform: linux/amd64
+    image: opensearchproject/opensearch:2.14.0
+    environment:
+      discovery.type: single-node
+      plugins.security.disabled: true
+      OPENSEARCH_JAVA_OPTS: -Xms2g -Xmx2g
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_INITIAL_ADMIN_PASSWORD}
+    ports:
+      - "9200:9200"
+    volumes:
+      - osdata:/usr/share/opensearch/data
+
+  photon:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.photon
+    image: photon-custom:latest
+    depends_on:
+      - opensearch
+      - db
+    ports:
+      - "2322:2322"
+    environment:
+      JAVA_OPTS: ${JAVA_OPTS}
+    volumes:
+      - photon-data:/app/photon_data
+    command: [
+      "-host", "db",
+      "-port", "5432",
+      "-database", "nominatim",
+      "-user", "nominatim",
+      "-password", "nominatim",
+      "-transport-addresses", "opensearch:9200"
+    ]
+
+  photon-import:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.photon
+    image: photon-custom:latest
+    depends_on:
+      - opensearch
+      - db
+    environment:
+      JAVA_OPTS: ${JAVA_OPTS}
+    volumes:
+      - photon-data:/app/photon_data
+    command: [
+      "-nominatim-import",
+      "-host", "db",
+      "-port", "5432",
+      "-database", "nominatim",
+      "-user", "nominatim",
+      "-password", "nominatim",
+      "-transport-addresses", "opensearch:9200",
+      "-languages", "sv,en"
+    ]
+
+  photon-env-debug:
+    build:
+      context: .
+      dockerfile: Dockerfile.photon
+    entrypoint: ""
+    command: ["sh", "-c", "env | sort"]
+
+volumes:
+  pgdata:
+  osdata:
+  photon-data:
+  nominatim-data: # Not currenly used since the nominatim service is not used
+
+networks:
+  default:
+    name: photon-net
