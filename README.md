@@ -13,10 +13,6 @@ This project sets up a complete local geocoding stack using:
 
 ---
 
-Here’s a clean and improved version of those two sections, with repetition removed, clarity improved, and formatting cleaned up. It also makes it more adaptable for users choosing another country than Sweden:
-
----
-
 ## 🌍 OSM Data Source
 
 This project uses OpenStreetMap data via [Geofabrik downloads](https://download.geofabrik.de/), which provides regional extracts in `.osm.pbf` format.
